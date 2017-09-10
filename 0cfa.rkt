@@ -1,0 +1,134 @@
+#lang racket
+
+(require rackunit)
+
+#| Implementation of 0CFA |#
+#| Code adapted from Abstract Compilation, Chapter 2 |#
+
+(define ⊥ (set))
+(define mt-store (make-immutable-hash))
+(define (lookup σ α)
+  (match α
+    [(? lambda?) (set α)]
+    [(? number?) (set)]
+    [else (hash-ref σ α ⊥)]))
+(define (update σ α d)
+  (cond [(set? d) (update* σ α d)]
+        [else (update* σ α (set d))]))
+(define (update* σ α setd)
+  (hash-update σ α (λ (d) (set-union d setd)) ⊥))
+(define (update/multi σ as ds)
+  (foldl (λ (a d σ) (update σ a d)) σ as ds))
+
+(define (var? x)
+  (and (symbol? x) (not (number? x))))
+(define (prim? x)
+  (or (eq? x '+) (eq? x 'if)))
+(define (lambda? x)
+  (match x
+    [`(lambda (,args ...) ,body) #t]
+    [else #f]))
+(define (lambda-args l) (cadr l))
+(define (lambda-body l) (caddr l))
+
+; Prog Env -> Env
+(define (0cfa-program prog σ)
+  (0cfa-call prog σ))
+
+; Call Env -> Env
+(define (0cfa-call e σ)
+  (printf "0cfa-call: ~a\n" e)
+  (match e
+    [`(letrec ([,var ,l] ...) ,body)
+     (define σ* (update/multi σ var l))
+     (define σ** (0cfa-args l σ*))
+     (0cfa-call body σ**)]
+    [`(,f ,args ...)
+     (0cfa-app f args (0cfa-args args σ))]))
+
+; Fun Arg* Env -> Env
+(define (0cfa-app f args σ)
+  (printf "0cfa-app: ~a\n" f)
+  (cond [(var? f) (0cfa-abstract-app (lookup σ f) args σ)]
+        [(prim? f) (0cfa-prim f args σ)]
+        [(lambda? f)
+         (define args* (map (λ (a) (lookup σ a)) args))
+         (define σ* (update/multi σ (lambda-args f) args*))
+         (0cfa-call (lambda-body f) σ*)]
+        [else (error '0cfa-app)]))
+
+; Set[Lam] Arg* Env -> Env
+(define (0cfa-abstract-app fs args σ)
+  (printf "0cfa-abstract-app: ~a\n" fs)
+  (cond [(set-empty? fs) σ]
+        [else
+         (define f (set-first fs))
+         (define rest (set-remove fs f))
+         (if (eq? f 'halt)
+             (0cfa-abstract-app rest args σ)
+             (let* ([args* (map (λ (a) (lookup σ a)) args)]
+                    [σ* (update/multi σ (lambda-args f) args*)])
+               (0cfa-abstract-app rest args σ*)))]))
+
+; Arg* Env -> Env
+(define (0cfa-args args σ)
+  (printf "0cfa-args: ~a\n" args)
+  (match args
+    [(list) σ]
+    [`(,arg ,args ...)
+     (define σ* (if (lambda? arg)
+                    (0cfa-call (lambda-body arg) σ)
+                    σ))
+     (0cfa-args args σ*)]))
+
+; Prim Arg* Env -> Env
+(define (0cfa-prim op args σ)
+  (0cfa-args args σ))
+
+(module+ test
+  (check-equal?
+   (update (update/multi mt-store '(a b c) '(1 2 3)) 'c 4)
+   (hash 'a (set 1) 'c (set 3 4) 'b (set 2)))
+
+  (check-equal?
+   (lookup (update (update/multi mt-store '(a b c) '(1 2 3)) 'c 4) 'c)
+   (set 3 4)))
+
+(module+ test*
+  (define example2
+    '((lambda (x) (halt x))
+      (lambda (y) (halt y))))
+  
+  (check-equal? (0cfa-program example2 mt-store)
+                (hash 'x (set '(lambda (y) (halt y)))))
+
+  (define example3
+    '((lambda (f c1)
+        ((lambda (x c2)
+           (f x c2))
+         2
+         c1))
+      (lambda (y c3) (+ y c3))
+      1))
+
+  (check-equal? (0cfa-program example3 mt-store)
+                (hash 'x (set) 'y (set) 'c3 (set) 'c2 (set) 'c1 (set)
+                      'f (set '(lambda (y c3) (+ y c3)))))
+
+  (define example4
+    '((lambda (x k) (k (lambda (a) (halt a))))
+      3
+      (lambda (z) (halt z))))
+  (check-equal? (0cfa-program example4 mt-store)
+                (hash 'x (set) 'z (set '(lambda (a) (halt a))) 'k (set '(lambda (z) (halt z)))))
+
+  )
+
+(define example1
+  '((lambda (apply k1)
+      (apply (lambda (x1 k2) (+ x1 1 k2))
+             (lambda (t2) (apply t2 (lambda (t3) (t3 2 k1))))))
+    (lambda (f k3) (k3 (lambda (x2 k4) (f x2 k4))))
+    (lambda (x) (halt x))))
+
+(0cfa-program example1 mt-store)
