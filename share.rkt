@@ -39,3 +39,8 @@
 (define (lambda-args l) (cadr l))
 
 (define (lambda-body l) (caddr l))
+
+(define (identity? l)
+  (match l
+    [`(lambda (,x) ,x) #t]
+    [else #f]))

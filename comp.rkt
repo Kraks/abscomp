@@ -1,11 +1,12 @@
 #lang racket
 
-#| Implementation of 0CFA with Abstract Compilation |#
-#| Code adapted from Abstract Compilation, Chapter 3 |#
+#| Implementation of 0CFA with Closure Generation |#
+#| Code adapted from Abstract Compilation, Chapter 4 |#
 
 (require rackunit)
 (require "share.rkt")
 (require "0cfa.rkt")
+(require "testcases.rkt")
 
 (define (comp-program prog)
   (comp-call prog))
@@ -20,7 +21,9 @@
     [`(,f ,args ...)
      (define C1 (comp-app f args))
      (define C2 (comp-args args))
-     (λ (σ) (C1 (C2 σ)))]))
+     (cond [(identity? C1) C2]
+           [(identity? C2) C1]
+           [else (λ (σ) (C1 (C2 σ)))])]))
 
 (define (comp-app f args)
   (when (debug) (printf "0cfa-app: ~a\n" f))
@@ -66,7 +69,6 @@
   (iter (compiled mt-store)))
 
 (module+ test
-
   (check-equal? (comp/analysis example1)
                 (0cfa-analysis example1))
 
