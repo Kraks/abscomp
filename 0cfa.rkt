@@ -15,12 +15,11 @@
 (define (0cfa-call e σ)
   (when (debug) (printf "0cfa-call: ~a\n" e))
   (match e
-    #|
+    ;; TODO: test letrec
     [`(letrec ([,var ,l] ...) ,body)
      (define σ* (update/multi σ var l))
      (define σ** (0cfa-args l σ*))
      (0cfa-call body σ**)]
-    |#
     [`(,f ,args ...)
      (0cfa-app f args (0cfa-args args σ))]))
 
@@ -32,8 +31,7 @@
         [(lambda? f)
          (define args* (map (λ (a) (lookup σ a)) args))
          (define σ* (update/multi σ (lambda-args f) args*))
-         (0cfa-call (lambda-body f) σ*)]
-        [else (error '0cfa-app "no match")]))
+         (0cfa-call (lambda-body f) σ*)]))
 
 ; Set[Lam] Arg* Env -> Env
 (define (0cfa-abstract-app fs args σ)
