@@ -5,6 +5,8 @@
 #| Implementation of 0CFA |#
 #| Code adapted from Abstract Compilation, Chapter 2 |#
 
+(define debug (make-parameter #f))
+
 (define ⊥ (set))
 (define mt-store (make-immutable-hash))
 (define (lookup σ α)
@@ -16,7 +18,7 @@
   (cond [(set? d) (update* σ α d)]
         [else (update* σ α (set d))]))
 (define (update* σ α setd)
-  (printf "~a -> ~a\n" α setd)
+  (when (debug) (printf "~a -> ~a\n" α setd))
   (hash-update σ α (λ (d) (set-union d setd)) ⊥))
 (define (update/multi σ as ds)
   (foldl (λ (a d σ) (update σ a d)) σ as ds))
@@ -32,13 +34,15 @@
 (define (lambda-args l) (cadr l))
 (define (lambda-body l) (caddr l))
 
+
+
 ; Prog Env -> Env
 (define (0cfa-program prog σ)
   (0cfa-call prog σ))
 
 ; Call Env -> Env
 (define (0cfa-call e σ)
-  (printf "0cfa-call: ~a\n" e)
+  (when (debug) (printf "0cfa-call: ~a\n" e))
   (match e
     #|
     [`(letrec ([,var ,l] ...) ,body)
@@ -51,7 +55,7 @@
 
 ; Fun Arg* Env -> Env
 (define (0cfa-app f args σ)
-  (printf "0cfa-app: ~a\n" f)
+  (when (debug) (printf "0cfa-app: ~a\n" f))
   (cond [(var? f) (0cfa-abstract-app (lookup σ f) args σ)]
         [(prim? f) (0cfa-prim f args σ)]
         [(lambda? f)
@@ -62,7 +66,7 @@
 
 ; Set[Lam] Arg* Env -> Env
 (define (0cfa-abstract-app fs args σ)
-  (printf "0cfa-abstract-app: ~a\n" fs)
+  (when (debug) (printf "0cfa-abstract-app: ~a\n" fs))
   (cond [(set-empty? fs) σ]
         [else
          (define f (set-first fs))
@@ -73,7 +77,7 @@
 
 ; Arg* Env -> Env
 (define (0cfa-args args σ)
-  (printf "0cfa-args: ~a\n" args)
+  (when (debug) (printf "0cfa-args: ~a\n" args))
   (match args
     [(list) σ]
     [`(,arg ,args ...)
@@ -84,7 +88,7 @@
 
 ; Prim Arg* Env -> Env
 (define (0cfa-prim op args σ)
-  (printf "0cfa-prim: ~a\n" args)
+  (when (debug) (printf "0cfa-prim: ~a\n" args))
   (0cfa-args args σ))
 
 (define (analysis prog)
@@ -94,7 +98,7 @@
         (iter σ*)))
   (iter mt-store))
 
-(module+ test*
+(module+ test
   (check-equal?
    (update (update/multi mt-store '(a b c) '(1 2 3)) 'c 4)
    (hash 'a (set 1) 'c (set 3 4) 'b (set 2)))
@@ -105,62 +109,64 @@
 )
 
 (module+ test
-  (define example2
-    '((lambda (x) (halt x))
-      (lambda (y) (halt y))))
+  (parameterize ([debug #f])
+    
+    (define example2
+      '((lambda (x) (halt x))
+        (lambda (y) (halt y))))
 
-  (check-equal? (analysis example2)
-                (hash 'x (set '(lambda (y) (halt y)))))
+    (check-equal? (analysis example2)
+                  (hash 'x (set '(lambda (y) (halt y)))))
 
-  (define example3
-    '((lambda (f c1)
-        ((lambda (x c2)
-           (f x c2))
-         2
-         c1))
-      (lambda (y c3) (+ y c3))
-      1))
+    (define example3
+      '((lambda (f c1)
+          ((lambda (x c2)
+             (f x c2))
+           2
+           c1))
+        (lambda (y c3) (+ y c3))
+        1))
 
-  (check-equal? (analysis example3)
-                (hash 'x (set) 'y (set) 'c3 (set) 'c2 (set) 'c1 (set)
-                      'f (set '(lambda (y c3) (+ y c3)))))
+    (check-equal? (analysis example3)
+                  (hash 'x (set) 'y (set) 'c3 (set) 'c2 (set) 'c1 (set)
+                        'f (set '(lambda (y c3) (+ y c3)))))
 
-  (define example4
-    '((lambda (x k) (k (lambda (a) (halt a))))
-      3
-      (lambda (z) (halt z))))
-  (check-equal? (analysis example4)
-                (hash 'x (set) 'z (set '(lambda (a) (halt a))) 'k (set '(lambda (z) (halt z)))))
+    (define example4
+      '((lambda (x k) (k (lambda (a) (halt a))))
+        3
+        (lambda (z) (halt z))))
+    (check-equal? (analysis example4)
+                  (hash 'x (set) 'z (set '(lambda (a) (halt a))) 'k (set '(lambda (z) (halt z)))))
 
-  (define example1
-    '((lambda (apply k1)
-        (apply (lambda (x1 k2) (+ x1 1 k2))
-               (lambda (t2) (apply t2 (lambda (t3) (t3 2 k1))))))
-      (lambda (f k3) (k3 (lambda (x2 k4) (f x2 k4))))
-      (lambda (x) (halt x))))
+    (define example1
+      '((lambda (apply k1)
+          (apply (lambda (x1 k2) (+ x1 1 k2))
+                 (lambda (t2) (apply t2 (lambda (t3) (t3 2 k1))))))
+        (lambda (f k3) (k3 (lambda (x2 k4) (f x2 k4))))
+        (lambda (x) (halt x))))
 
-  (check-equal? (analysis example1)
-                (hash
-                 't3
-                 (set '(lambda (x2 k4) (f x2 k4)))
-                 'k4
-                 (set '(lambda (x) (halt x)))
-                 'x2
-                 (set)
-                 'x1
-                 (set)
-                 'apply
-                 (set '(lambda (f k3) (k3 (lambda (x2 k4) (f x2 k4)))))
-                 't2
-                 (set '(lambda (x2 k4) (f x2 k4)))
-                 'f
-                 (set '(lambda (x2 k4) (f x2 k4)) '(lambda (x1 k2) (+ x1 1 k2)))
-                 'k3
-                 (set '(lambda (t3) (t3 2 k1)) '(lambda (t2) (apply t2 (lambda (t3) (t3 2 k1)))))
-                 'k2
-                 (set '(lambda (x) (halt x)))
-                 'k1
-                 (set '(lambda (x) (halt x)))))
-  )
+    (check-equal? (analysis example1)
+                  (hash
+                   't3
+                   (set '(lambda (x2 k4) (f x2 k4)))
+                   'k4
+                   (set '(lambda (x) (halt x)))
+                   'x2
+                   (set)
+                   'x1
+                   (set)
+                   'apply
+                   (set '(lambda (f k3) (k3 (lambda (x2 k4) (f x2 k4)))))
+                   't2
+                   (set '(lambda (x2 k4) (f x2 k4)))
+                   'f
+                   (set '(lambda (x2 k4) (f x2 k4)) '(lambda (x1 k2) (+ x1 1 k2)))
+                   'k3
+                   (set '(lambda (t3) (t3 2 k1)) '(lambda (t2) (apply t2 (lambda (t3) (t3 2 k1)))))
+                   'k2
+                   (set '(lambda (x) (halt x)))
+                   'k1
+                   (set '(lambda (x) (halt x)))))
+    ))
 
 
