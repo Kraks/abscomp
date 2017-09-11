@@ -1,11 +1,13 @@
 #lang racket
 
-(require rackunit)
-
 #| Implementation of 0CFA |#
 #| Code adapted from Abstract Compilation, Chapter 2 |#
 
+(require rackunit)
 (require "share.rkt")
+(require "testcases.rkt")
+
+(provide (rename-out [analysis 0cfa-analysis]))
 
 ; Prog Env -> Env
 (define (0cfa-program prog σ)
@@ -63,8 +65,7 @@
 (define (analysis prog)
   (define (iter σ)
     (define σ* (0cfa-program prog σ))
-    (if (equal? σ* σ) σ
-        (iter σ*)))
+    (if (equal? σ* σ) σ (iter σ*)))
   (iter mt-store))
 
 (module+ test
@@ -79,40 +80,18 @@
 
 (module+ test
   (parameterize ([debug #f])
-    
-    (define example2
-      '((lambda (x) (halt x))
-        (lambda (y) (halt y))))
 
     (check-equal? (analysis example2)
                   (hash 'x (set '(lambda (y) (halt y)))))
 
-    (define example3
-      '((lambda (f c1)
-          ((lambda (x c2)
-             (f x c2))
-           2
-           c1))
-        (lambda (y c3) (+ y c3))
-        1))
 
     (check-equal? (analysis example3)
                   (hash 'x (set) 'y (set) 'c3 (set) 'c2 (set) 'c1 (set)
                         'f (set '(lambda (y c3) (+ y c3)))))
 
-    (define example4
-      '((lambda (x k) (k (lambda (a) (halt a))))
-        3
-        (lambda (z) (halt z))))
+
     (check-equal? (analysis example4)
                   (hash 'x (set) 'z (set '(lambda (a) (halt a))) 'k (set '(lambda (z) (halt z)))))
-
-    (define example1
-      '((lambda (apply k1)
-          (apply (lambda (x1 k2) (+ x1 1 k2))
-                 (lambda (t2) (apply t2 (lambda (t3) (t3 2 k1))))))
-        (lambda (f k3) (k3 (lambda (x2 k4) (f x2 k4))))
-        (lambda (x) (halt x))))
 
     (check-equal? (analysis example1)
                   (hash
@@ -137,5 +116,3 @@
                    'k1
                    (set '(lambda (x) (halt x)))))
     ))
-
-
