@@ -16,9 +16,14 @@
   (cond [(set? d) (update* σ α d)]
         [else (update* σ α (set d))]))
 (define (update* σ α setd)
+  (printf "~a -> ~a\n" α setd)
   (hash-update σ α (λ (d) (set-union d setd)) ⊥))
 (define (update/multi σ as ds)
   (foldl (λ (a d σ) (update σ a d)) σ as ds))
+(define (join s1 s2)
+  (for/fold ([new-store s1])
+            ([(k v) (in-hash s2)])
+    (update new-store k v)))
 
 (define (var? x)
   (and (symbol? x) (not (number? x))))
@@ -39,10 +44,12 @@
 (define (0cfa-call e σ)
   (printf "0cfa-call: ~a\n" e)
   (match e
+    #|
     [`(letrec ([,var ,l] ...) ,body)
      (define σ* (update/multi σ var l))
      (define σ** (0cfa-args l σ*))
      (0cfa-call body σ**)]
+    |#
     [`(,f ,args ...)
      (0cfa-app f args (0cfa-args args σ))]))
 
@@ -55,7 +62,7 @@
          (define args* (map (λ (a) (lookup σ a)) args))
          (define σ* (update/multi σ (lambda-args f) args*))
          (0cfa-call (lambda-body f) σ*)]
-        [else (error '0cfa-app)]))
+        [else (error '0cfa-app "no match")]))
 
 ; Set[Lam] Arg* Env -> Env
 (define (0cfa-abstract-app fs args σ)
@@ -64,11 +71,9 @@
         [else
          (define f (set-first fs))
          (define rest (set-remove fs f))
-         (if (eq? f 'halt)
-             (0cfa-abstract-app rest args σ)
-             (let* ([args* (map (λ (a) (lookup σ a)) args)]
-                    [σ* (update/multi σ (lambda-args f) args*)])
-               (0cfa-abstract-app rest args σ*)))]))
+         (let* ([args* (map (λ (a) (lookup σ a)) args)]
+                [σ* (update/multi σ (lambda-args f) args*)])
+           (0cfa-abstract-app rest args σ*))]))
 
 ; Arg* Env -> Env
 (define (0cfa-args args σ)
@@ -83,23 +88,35 @@
 
 ; Prim Arg* Env -> Env
 (define (0cfa-prim op args σ)
+  (printf "0cfa-prim: ~a\n" args)
   (0cfa-args args σ))
 
-(module+ test
+(define (analysis prog)
+  (define (iter σ)
+    (define σ* (0cfa-program prog σ))
+    (if (equal? σ* σ) σ
+        (iter σ*)))
+  (iter mt-store))
+
+(module+ test*
   (check-equal?
    (update (update/multi mt-store '(a b c) '(1 2 3)) 'c 4)
    (hash 'a (set 1) 'c (set 3 4) 'b (set 2)))
 
   (check-equal?
    (lookup (update (update/multi mt-store '(a b c) '(1 2 3)) 'c 4) 'c)
-   (set 3 4)))
+   (set 3 4))
 
-(module+ test*
+  (check-equal? (join (update (update/multi mt-store '(a b c) '(1 2 3)) 'c 4)
+                      (update (update/multi mt-store '(a b c) '(1 7 3)) 'c 5))
+                (hash 'a (set 1) 'c (set 5 3 4) 'b (set 7 2))))
+
+(module+ test
   (define example2
     '((lambda (x) (halt x))
       (lambda (y) (halt y))))
-  
-  (check-equal? (0cfa-program example2 mt-store)
+
+  (check-equal? (analysis example2)
                 (hash 'x (set '(lambda (y) (halt y)))))
 
   (define example3
@@ -111,7 +128,7 @@
       (lambda (y c3) (+ y c3))
       1))
 
-  (check-equal? (0cfa-program example3 mt-store)
+  (check-equal? (analysis example3)
                 (hash 'x (set) 'y (set) 'c3 (set) 'c2 (set) 'c1 (set)
                       'f (set '(lambda (y c3) (+ y c3)))))
 
@@ -119,16 +136,38 @@
     '((lambda (x k) (k (lambda (a) (halt a))))
       3
       (lambda (z) (halt z))))
-  (check-equal? (0cfa-program example4 mt-store)
+  (check-equal? (analysis example4)
                 (hash 'x (set) 'z (set '(lambda (a) (halt a))) 'k (set '(lambda (z) (halt z)))))
 
+  (define example1
+    '((lambda (apply k1)
+        (apply (lambda (x1 k2) (+ x1 1 k2))
+               (lambda (t2) (apply t2 (lambda (t3) (t3 2 k1))))))
+      (lambda (f k3) (k3 (lambda (x2 k4) (f x2 k4))))
+      (lambda (x) (halt x))))
+
+  (check-equal? (analysis example1)
+                (hash
+                 't3
+                 (set '(lambda (x2 k4) (f x2 k4)))
+                 'k4
+                 (set '(lambda (x) (halt x)))
+                 'x2
+                 (set)
+                 'x1
+                 (set)
+                 'apply
+                 (set '(lambda (f k3) (k3 (lambda (x2 k4) (f x2 k4)))))
+                 't2
+                 (set '(lambda (x2 k4) (f x2 k4)))
+                 'f
+                 (set '(lambda (x2 k4) (f x2 k4)) '(lambda (x1 k2) (+ x1 1 k2)))
+                 'k3
+                 (set '(lambda (t3) (t3 2 k1)) '(lambda (t2) (apply t2 (lambda (t3) (t3 2 k1)))))
+                 'k2
+                 (set '(lambda (x) (halt x)))
+                 'k1
+                 (set '(lambda (x) (halt x)))))
   )
 
-(define example1
-  '((lambda (apply k1)
-      (apply (lambda (x1 k2) (+ x1 1 k2))
-             (lambda (t2) (apply t2 (lambda (t3) (t3 2 k1))))))
-    (lambda (f k3) (k3 (lambda (x2 k4) (f x2 k4))))
-    (lambda (x) (halt x))))
 
-(0cfa-program example1 mt-store)
