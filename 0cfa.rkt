@@ -20,10 +20,6 @@
   (hash-update σ α (λ (d) (set-union d setd)) ⊥))
 (define (update/multi σ as ds)
   (foldl (λ (a d σ) (update σ a d)) σ as ds))
-(define (join s1 s2)
-  (for/fold ([new-store s1])
-            ([(k v) (in-hash s2)])
-    (update new-store k v)))
 
 (define (var? x)
   (and (symbol? x) (not (number? x))))
@@ -106,10 +102,7 @@
   (check-equal?
    (lookup (update (update/multi mt-store '(a b c) '(1 2 3)) 'c 4) 'c)
    (set 3 4))
-
-  (check-equal? (join (update (update/multi mt-store '(a b c) '(1 2 3)) 'c 4)
-                      (update (update/multi mt-store '(a b c) '(1 7 3)) 'c 5))
-                (hash 'a (set 1) 'c (set 5 3 4) 'b (set 7 2))))
+)
 
 (module+ test
   (define example2
