@@ -26,3 +26,41 @@
   '((lambda (x k) (k (lambda (a) (halt a))))
     3
     (lambda (z) (halt z))))
+
+(define example5
+  '((lambda (f1 k1)
+      ((lambda (f2 k2)
+         ((lambda (f3 k3)
+            ((lambda (f4 k4)
+               ((lambda (f5 k5)
+                  ((lambda (f6 k6)
+                     ((lambda (f7 k7)
+                        ((lambda (f8 k8)
+                           ((lambda (f9 k9)
+                              ((lambda (f10 k10)
+                                 ((lambda (f11 k11)
+                                    ((lambda (f12 k12) (k12 f12))
+                                     f11
+                                     k11))
+                                  f10
+                                  k10))
+                               f9
+                               k9))
+                            f8
+                            k8))
+                         f7
+                         k7))
+                      f6
+                      k6))
+                   f5
+                   k5))
+                f4
+                k4))
+             f3
+             k3))
+          f2
+          k2))
+       f1
+       k1))
+    (lambda (y) (halt y))
+    (lambda (x) (halt x))))

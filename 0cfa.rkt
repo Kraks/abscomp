@@ -116,3 +116,5 @@
                    'k1
                    (set '(lambda (x) (halt x)))))
     ))
+
+(analysis example5)
